@@ -1,0 +1,26 @@
+batch_connect:
+  template: "basic"
+
+script:
+  native:
+    - "--time=<%= bc_num_hours %>:00:00"
+    - "--cpus-per-task=<%= num_cores %>"
+    - "--mem=<%= num_memory %>G"
+    - "--nodes=1"
+    - "-p <%= partition %>"
+<%
+  skip_gres = gpu_type == "none" || ["batch", "largemem", "rc2", "pangolinlab", "ruiguolab", "shushkovlab", "vaseylab"].include?(partition)
+%>
+<% unless skip_gres %>
+  <% if gpu_type == "a100_40" %>
+    - "--gres=gpu:a100:1"
+    - "--constraint=a100-40G"
+  <% elsif gpu_type == "a100_80" %>
+    - "--gres=gpu:a100:1"
+    - "--constraint=a100-80G"
+  <% elsif gpu_type == "any" %>
+    - "--gres=gpu:1"
+  <% else %>
+    - "--gres=gpu:<%= gpu_type %>:1"
+  <% end %>
+<% end %>

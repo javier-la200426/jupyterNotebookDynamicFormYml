@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+echo "Starting main script..."
+echo "TTT - $(date)"
+
+#
+# Start Jupyter server
+#
+
+# Set the working directory
+workdir="<%= context.working_directory %>"
+
+# If the working directory does not exist, set it to $HOME
+if [[ -z "$workdir" ]] || [[ ! -d "$workdir" ]]; then
+    echo "Working directory '$workdir' does not exist or is not set. Setting it to $HOME."
+    workdir="$HOME"
+fi
+
+echo "Using working directory: $workdir"
+cd $workdir
+
+#
+# Start Jupyter Notebook Server
+#
+
+# Purge the module environment to avoid conflicts
+module purge
+
+# Load the require modules
+module load jupyter
+module load <%= context.module %>
+module list
+
+# List available kernels for debugging purposes
+set -x
+jupyter kernelspec list
+{ set +x; } 2>/dev/null
+echo "TTT - $(date)"
+
+# Launch the Jupyter server
+set -x
+jupyter <%= context.mode == "1" ? 'lab' : 'notebook' %> --config="${CONFIG_FILE}"
