@@ -23,6 +23,8 @@ end
 
 nodes_out = capture_stdout('scontrol show node --oneliner')
 
+
+#Parsing the SLURM output
 detected_types = Set.new
 a100_sizes     = Set.new # values: 'a100_40', 'a100_80'
 
