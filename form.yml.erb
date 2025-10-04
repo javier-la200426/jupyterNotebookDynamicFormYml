@@ -28,11 +28,17 @@ nodes_out = capture_stdout('scontrol show node --oneliner')
 detected_types = Set.new
 a100_sizes     = Set.new # values: 'a100_40', 'a100_80'
 
+# Per-partition tracking
+detected_by_partition    = Hash.new { |h, k| h[k] = Set.new }
+a100_sizes_by_partition  = Hash.new { |h, k| h[k] = Set.new }
+
 nodes_out.each_line do |line|
   # Gres=gpu:<type>:<count>
   if (m = line.match(/\bGres=gpu:(\w+)/))
     type = m[1]
-    detected_types << type if type && type != 'null'
+    if type && type != 'null'
+      detected_types << type
+    end
   end
 
   # Features fields may contain capacity hints like a100-40G / a100-80G
@@ -42,6 +48,26 @@ nodes_out.each_line do |line|
   feats = [feats_available, feats_active, feats_legacy].compact.join(',')
   a100_sizes << 'a100_40' if feats.include?('a100-40G')
   a100_sizes << 'a100_80' if feats.include?('a100-80G')
+
+  # Partition list for this node
+  parts_str = line[/\bPartitions=(\S+)/, 1]
+  parts = parts_str ? parts_str.split(',') : []
+
+  # Record per-partition types
+  if (m)
+    type = m[1]
+    if type && type != 'null'
+      parts.each { |p| detected_by_partition[p] << type }
+    end
+  end
+
+  # Record per-partition A100 sizes
+  if feats.include?('a100-40G')
+    parts.each { |p| a100_sizes_by_partition[p] << 'a100_40' }
+  end
+  if feats.include?('a100-80G')
+    parts.each { |p| a100_sizes_by_partition[p] << 'a100_80' }
+  end
 end
 
 # Flag if dynamic discovery failed (no types detected)
@@ -52,7 +78,8 @@ if !a100_sizes.empty?
   detected_types.delete('a100')
 end
  
-# Human-friendly labels for known GPU types
+# Human-friendly labels for known GPU types (for display purposes)
+# h200 is always 140GB so it is not hardcoded it just always has this size
 label_map = {
   'h200'        => 'H200 - 140GB',
   'h100'        => 'H100 - 80GB',
@@ -74,25 +101,78 @@ order = %w[h200 h100 a100_80 a100_40 a100 l40s l40 rtx_6000ada rtx_a6000 rtx_600
 priority = order.each_with_index.to_h
 
 options = []
-options << ['none', 'none']
-options << ['any',  'any']
+if detected_types.empty? && a100_sizes.empty?
+  # No GPUs detected anywhere: only show 'none'
+  options << ['none', 'none']
+else
+  # GPUs detected: show 'any' and concrete GPU types, but not 'none'
+  options << ['any',  'any']
 
-# Add A100 size-specific entries first if discovered
-options << [label_map['a100_40'], 'a100_40'] if a100_sizes.include?('a100_40')
-options << [label_map['a100_80'], 'a100_80'] if a100_sizes.include?('a100_80')
+  # Add A100 size-specific entries first if discovered
+  options << [label_map['a100_40'], 'a100_40'] if a100_sizes.include?('a100_40')
+  options << [label_map['a100_80'], 'a100_80'] if a100_sizes.include?('a100_80')
 
-# Then add remaining detected types
-remaining = detected_types.to_a
-remaining.sort_by! { |t| priority.fetch(t, 999) }
-remaining.each do |t|
-  next if %w[a100_40 a100_80].include?(t) # already added above
-  label = label_map[t] || t.upcase
-  options << [label, t]
+  # Then add remaining detected types
+  remaining = detected_types.to_a
+  remaining.sort_by! { |t| priority.fetch(t, 999) }
+  remaining.each do |t|
+    next if %w[a100_40 a100_80].include?(t) # already added above
+    label = label_map[t] || t.upcase
+    options << [label, t]
+  end
 end
+
+# Build partition-aware options map using the same labeling/ordering rules
+partition_options_map = {}
+
+# Helper to construct options array from a set of types and a100 size set
+build_opts = lambda do |types_set, a100_size_set|
+  local = []
+
+  if types_set.empty? && a100_size_set.empty?
+    # No GPUs detected in this partition: only show 'none'
+    local << ['none', 'none']
+  else
+    # GPUs detected in this partition: show 'any' and concrete GPU types
+    local << ['any',  'any']
+
+    # Prefer size-specific A100 entries
+    if a100_size_set.include?('a100_40')
+      local << [label_map['a100_40'], 'a100_40']
+    end
+    if a100_size_set.include?('a100_80')
+      local << [label_map['a100_80'], 'a100_80']
+    end
+
+    remaining_local = types_set.to_a
+    if !a100_size_set.empty?
+      remaining_local.delete('a100')
+    end
+    remaining_local.sort_by! { |t| priority.fetch(t, 999) }
+    remaining_local.each do |t|
+      next if %w[a100_40 a100_80].include?(t)
+      label = label_map[t] || t.upcase
+      local << [label, t]
+    end
+  end
+  local
+end
+
+# Collect all partitions seen in either map
+all_partitions = (detected_by_partition.keys + a100_sizes_by_partition.keys).uniq
+all_partitions.each do |p|
+  partition_options_map[p] = build_opts.call(detected_by_partition[p], a100_sizes_by_partition[p])
+end
+
+# Also keep a cluster-wide default
+partition_options_map['all'] = options
 %>
   gpu_type:
     widget: "select"
     label: "GPU architecture"
+    html_options:
+      data:
+        partition_options: '<%= partition_options_map.to_json %>'
 <% if dynamic_failed %>
     help: "Failed to dynamically obtain GPU options from Slurm on this host. Showing minimal defaults (none/any)."
 <% else %>
@@ -102,6 +182,7 @@ end
 <% options.each do |label, value| %>
       - [ "<%= label %>", "<%= value %>" ]
 <% end %>
+    javascript: "form.js"
 <%
 begin
   debug_log = File.join(ENV['HOME'], 'javi_gpu_debug.log')
@@ -112,6 +193,8 @@ begin
     f.puts "detected_types=#{detected_types.to_a.inspect}"
     f.puts "a100_sizes=#{a100_sizes.to_a.inspect}"
     f.puts "options=#{options.inspect}"
+    f.puts "partitions_seen=#{all_partitions.inspect}"
+    f.puts "partition_options_map_keys=#{partition_options_map.keys.inspect}"
   end
 rescue => e
   # swallow logging errors so the form still renders
