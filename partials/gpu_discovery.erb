@@ -152,5 +152,43 @@ end
 
 # Also keep a cluster-wide default
 @partition_options_map['all'] = @options
+
+# Generate the complete gpu_type field definition
+def generate_gpu_type_field
+  field_yaml = <<~YAML
+  gpu_type:
+    widget: "select"
+    label: "GPU architecture"
+    html_options:
+      data:
+        partition_options: '#{@partition_options_map.to_json}'
+  YAML
+
+  if @dynamic_failed
+    field_yaml += <<~YAML
+    help: "Failed to dynamically obtain GPU options from Slurm on this host. Showing minimal defaults (none/any)."
+    YAML
+  else
+    field_yaml += <<~YAML
+    help: "Auto-detected: types=#{@detected_types.to_a.join(',')}; sizes=#{@a100_sizes.to_a.join(',')}. Choose 'any' if you don't have a preference."
+    YAML
+  end
+
+  field_yaml += <<~YAML
+    options:
+  YAML
+
+  @options.each do |label, value|
+    field_yaml += <<~YAML
+      - [ "#{label}", "#{value}" ]
+    YAML
+  end
+
+  field_yaml += <<~YAML
+    javascript: "form.js"
+  YAML
+
+  field_yaml
+end
 %>
 

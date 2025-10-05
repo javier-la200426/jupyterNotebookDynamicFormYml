@@ -13,22 +13,7 @@ attributes:
 
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/num_cores_generic.yml").indent(2) %>
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/num_memory_generic.yml").indent(2) %>
-  gpu_type:
-    widget: "select"
-    label: "GPU architecture"
-    html_options:
-      data:
-        partition_options: '<%= @partition_options_map.to_json %>'
-<% if @dynamic_failed %>
-    help: "Failed to dynamically obtain GPU options from Slurm on this host. Showing minimal defaults (none/any)."
-<% else %>
-    help: "Auto-detected: types=<%= @detected_types.to_a.join(',') %>; sizes=<%= @a100_sizes.to_a.join(',') %>. Choose 'any' if you don't have a preference."
-<% end %>
-    options:
-<% @options.each do |label, value| %>
-      - [ "<%= label %>", "<%= value %>" ]
-<% end %>
-    javascript: "form.js"
+<%= generate_gpu_type_field.indent(2) %>
 <%
 begin
   debug_log = File.join(ENV['HOME'], 'javi_gpu_debug.log')
