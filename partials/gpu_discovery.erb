@@ -1,0 +1,156 @@
+<%
+require 'open3'
+require 'set'
+
+# Capture command output or return empty string on failure
+def capture_stdout(cmd)
+  stdout, status = Open3.capture2(cmd)
+  status.success? ? stdout : ''
+end
+
+@nodes_out = capture_stdout('scontrol show node --oneliner')
+
+# Parsing the SLURM output
+@detected_types = Set.new
+@a100_sizes     = Set.new # values: 'a100_40', 'a100_80'
+
+# Per-partition tracking
+@detected_by_partition    = Hash.new { |h, k| h[k] = Set.new }
+@a100_sizes_by_partition  = Hash.new { |h, k| h[k] = Set.new }
+
+@nodes_out.each_line do |line|
+  # Gres=gpu:<type>:<count>
+  if (m = line.match(/\bGres=gpu:(\w+)/))
+    type = m[1]
+    if type && type != 'null'
+      @detected_types << type
+    end
+  end
+
+  # Features fields may contain capacity hints like a100-40G / a100-80G
+  feats_available = line[/\bAvailableFeatures=(\S+)/, 1]
+  feats_active    = line[/\bActiveFeatures=(\S+)/, 1]
+  feats_legacy    = line[/\bFeature(?:s)?=(\S+)/, 1]
+  feats = [feats_available, feats_active, feats_legacy].compact.join(',')
+  @a100_sizes << 'a100_40' if feats.include?('a100-40G')
+  @a100_sizes << 'a100_80' if feats.include?('a100-80G')
+
+  # Partition list for this node
+  parts_str = line[/\bPartitions=(\S+)/, 1]
+  parts = parts_str ? parts_str.split(',') : []
+
+  # Record per-partition types
+  if (m)
+    type = m[1]
+    if type && type != 'null'
+      parts.each { |p| @detected_by_partition[p] << type }
+    end
+  end
+
+  # Record per-partition A100 sizes
+  if feats.include?('a100-40G')
+    parts.each { |p| @a100_sizes_by_partition[p] << 'a100_40' }
+  end
+  if feats.include?('a100-80G')
+    parts.each { |p| @a100_sizes_by_partition[p] << 'a100_80' }
+  end
+end
+
+# Flag if dynamic discovery failed (no types detected)
+@dynamic_failed = @detected_types.empty?
+
+# If we know specific A100 sizes, prefer those over a generic 'a100'
+if !@a100_sizes.empty?
+  @detected_types.delete('a100')
+end
+
+# Human-friendly labels for known GPU types (for display purposes)
+label_map = {
+  'h200'        => 'H200 - 140GB',
+  'h100'        => 'H100 - 80GB',
+  'a100'        => 'A100',
+  'a100_40'     => 'A100 - 40GB',
+  'a100_80'     => 'A100 - 80GB',
+  'l40s'        => 'L40S - 48GB',
+  'l40'         => 'L40 - 48GB',
+  'rtx_6000ada' => 'RTX 6000Ada - 48GB',
+  'rtx_a6000'   => 'RTX A6000 - 48GB',
+  'rtx_6000'    => 'RTX 6000 - 24GB',
+  'v100'        => 'v100 - 16GB',
+  'p100'        => 'P100 - 16GB',
+  't4'          => 'T4 - 16GB'
+}
+
+# Preferred display order (others fall to the end)
+order = %w[h200 h100 a100_80 a100_40 a100 l40s l40 rtx_6000ada rtx_a6000 rtx_6000 v100 p100 t4]
+priority = order.each_with_index.to_h
+
+# Cluster-wide default options
+@options = []
+if @detected_types.empty? && @a100_sizes.empty?
+  # No GPUs detected anywhere: only show 'none'
+  @options << ['none', 'none']
+else
+  # GPUs detected: show 'any' and concrete GPU types, but not 'none'
+  @options << ['any',  'any']
+
+  # Add A100 size-specific entries first if discovered
+  @options << [label_map['a100_40'], 'a100_40'] if @a100_sizes.include?('a100_40')
+  @options << [label_map['a100_80'], 'a100_80'] if @a100_sizes.include?('a100_80')
+
+  # Then add remaining detected types
+  remaining = @detected_types.to_a
+  remaining.sort_by! { |t| priority.fetch(t, 999) }
+  remaining.each do |t|
+    next if %w[a100_40 a100_80].include?(t) # already added above
+    label = label_map[t] || t.upcase
+    @options << [label, t]
+  end
+end
+
+# Build partition-aware options map using the same labeling/ordering rules
+@partition_options_map = {}
+
+# Helper to construct options array from a set of types and a100 size set
+build_opts = lambda do |types_set, a100_size_set|
+  local = []
+
+  if types_set.empty? && a100_size_set.empty?
+    # No GPUs detected in this partition: only show 'none'
+    local << ['none', 'none']
+  else
+    # GPUs detected in this partition: show 'any' and concrete GPU types
+    local << ['any',  'any']
+
+    # Prefer size-specific A100 entries
+    if a100_size_set.include?('a100_40')
+      local << [label_map['a100_40'], 'a100_40']
+    end
+    if a100_size_set.include?('a100_80')
+      local << [label_map['a100_80'], 'a100_80']
+    end
+
+    remaining_local = types_set.to_a
+    if !a100_size_set.empty?
+      remaining_local.delete('a100')
+    end
+    remaining_local.sort_by! { |t| priority.fetch(t, 999) }
+    remaining_local.each do |t|
+      next if %w[a100_40 a100_80].include?(t)
+      label = label_map[t] || t.upcase
+      local << [label, t]
+    end
+  end
+  local
+end
+
+# Collect all partitions seen in either map
+@all_partitions = (@detected_by_partition.keys + @a100_sizes_by_partition.keys).uniq
+@all_partitions.each do |p|
+  @partition_options_map[p] = build_opts.call(@detected_by_partition[p], @a100_sizes_by_partition[p])
+end
+
+# Also keep a cluster-wide default
+@partition_options_map['all'] = @options
+%>
+
