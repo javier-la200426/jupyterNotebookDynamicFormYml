@@ -14,6 +14,8 @@ attributes:
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/num_cores_generic.yml").indent(2) %>
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/num_memory_generic.yml").indent(2) %>
 <%= generate_gpu_type_field.indent(2) %>
+
+#optional debug log
 <%
 begin
   debug_log = File.join(ENV['HOME'], 'javi_gpu_debug.log')
