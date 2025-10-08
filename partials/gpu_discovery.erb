@@ -54,12 +54,19 @@ end
     end
   end
 
-  # Extract Memory information (RealMemory in MB)
-  real_memory = line[/\bRealMemory=(\d+)/, 1]
-  if real_memory
-    memory_mb = real_memory.to_i
-    parts.each do |p|
-      @max_memory_by_partition[p] = memory_mb if memory_mb > @max_memory_by_partition[p]
+  # Extract Memory information from CfgTRES (what's actually schedulable)
+  # Format: CfgTRES=cpu=64,mem=514943M,billing=64 or mem=1500G
+  cfg_tres = line[/\bCfgTRES=([^\s]+)/, 1]
+  if cfg_tres && cfg_tres.include?('mem=')
+    mem_match = cfg_tres.match(/mem=(\d+(?:\.\d+)?)([MG])/)
+    if mem_match
+      mem_value = mem_match[1].to_f
+      mem_unit = mem_match[2]
+      # Convert to MB for consistent storage
+      memory_mb = (mem_unit == 'G') ? (mem_value * 1024).to_i : mem_value.to_i
+      parts.each do |p|
+        @max_memory_by_partition[p] = memory_mb if memory_mb > @max_memory_by_partition[p]
+      end
     end
   end
 
