@@ -18,6 +18,9 @@ end
 @detected_by_partition    = Hash.new { |h, k| h[k] = Set.new }
 @a100_sizes_by_partition  = Hash.new { |h, k| h[k] = Set.new }
 
+# Core/CPU tracking per partition
+@max_cores_by_partition   = Hash.new(0)  # Track max cores available per partition
+
 @nodes_out.each_line do |line|
   # Gres=gpu:<type>:<count>
   if (m = line.match(/\bGres=gpu:(\w+)/))
@@ -38,6 +41,15 @@ end
   # Partition list for this node
   parts_str = line[/\bPartitions=(\S+)/, 1]
   parts = parts_str ? parts_str.split(',') : []
+
+  # Extract CPU/Core information
+  cpu_tot = line[/\bCPUTot=(\d+)/, 1]
+  if cpu_tot
+    cores = cpu_tot.to_i
+    parts.each do |p|
+      @max_cores_by_partition[p] = cores if cores > @max_cores_by_partition[p]
+    end
+  end
 
   # Record per-partition types
   if (m)
@@ -188,6 +200,29 @@ def generate_gpu_type_field
     javascript: "form.js"
   YAML
 
+  field_yaml
+end
+
+# Cluster-wide max cores (for 'all' partition fallback)
+@global_max_cores = @max_cores_by_partition.values.max || 64
+@max_cores_by_partition['all'] = @global_max_cores
+
+# Generate the complete num_cores field definition
+def generate_num_cores_field
+  field_yaml = <<~YAML
+  num_cores:
+    widget: "number_field"
+    label: "Number of CPU cores"
+    value: 1
+    min: 1
+    max: #{@global_max_cores}
+    step: 1
+    html_options:
+      data:
+        partition_max_cores: '#{@max_cores_by_partition.to_json}'
+    help: "Number of CPU cores/threads to allocate. Max varies by partition (detected: #{@global_max_cores} cores)."
+  YAML
+  
   field_yaml
 end
 %>

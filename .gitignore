@@ -1,0 +1,3 @@
+# Ignore specific files
+FoormWorking.yml.erb
+partials/gpuDiscWorkingOCt4.erb

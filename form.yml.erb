@@ -11,7 +11,7 @@ attributes:
 
   extra_jupyter_args: ""
 
-<%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/num_cores_generic.yml").indent(2) %>
+<%= generate_num_cores_field.indent(2) %>
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/num_memory_generic.yml").indent(2) %>
 <%= generate_gpu_type_field.indent(2) %>
 
@@ -28,6 +28,8 @@ begin
     f.puts "options=#{@options.inspect}"
     f.puts "partitions_seen=#{@all_partitions.inspect}"
     f.puts "partition_options_map_keys=#{@partition_options_map.keys.inspect}"
+    f.puts "max_cores_by_partition=#{@max_cores_by_partition.inspect}"
+    f.puts "global_max_cores=#{@global_max_cores}"
   end
 rescue => e
   # swallow logging errors so the form still renders
