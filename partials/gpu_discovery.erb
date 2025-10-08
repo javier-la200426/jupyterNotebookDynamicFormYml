@@ -21,6 +21,9 @@ end
 # Core/CPU tracking per partition
 @max_cores_by_partition   = Hash.new(0)  # Track max cores available per partition
 
+# Memory tracking per partition (in MB)
+@max_memory_by_partition  = Hash.new(0)  # Track max memory available per partition
+
 @nodes_out.each_line do |line|
   # Gres=gpu:<type>:<count>
   if (m = line.match(/\bGres=gpu:(\w+)/))
@@ -42,12 +45,21 @@ end
   parts_str = line[/\bPartitions=(\S+)/, 1]
   parts = parts_str ? parts_str.split(',') : []
 
-  # Extract CPU/Core information
-  cpu_tot = line[/\bCPUTot=(\d+)/, 1]
-  if cpu_tot
-    cores = cpu_tot.to_i
+  # Extract CPU/Core information (use CPUEfctv as it represents what's schedulable)
+  cpu_efctv = line[/\bCPUEfctv=(\d+)/, 1]
+  if cpu_efctv
+    cores = cpu_efctv.to_i
     parts.each do |p|
       @max_cores_by_partition[p] = cores if cores > @max_cores_by_partition[p]
+    end
+  end
+
+  # Extract Memory information (RealMemory in MB)
+  real_memory = line[/\bRealMemory=(\d+)/, 1]
+  if real_memory
+    memory_mb = real_memory.to_i
+    parts.each do |p|
+      @max_memory_by_partition[p] = memory_mb if memory_mb > @max_memory_by_partition[p]
     end
   end
 
@@ -207,6 +219,10 @@ end
 @global_max_cores = @max_cores_by_partition.values.max || 64
 @max_cores_by_partition['all'] = @global_max_cores
 
+# Cluster-wide max memory (for 'all' partition fallback)
+@global_max_memory = @max_memory_by_partition.values.max || 128000
+@max_memory_by_partition['all'] = @global_max_memory
+
 # Generate the complete num_cores field definition
 def generate_num_cores_field
   field_yaml = <<~YAML
@@ -221,6 +237,28 @@ def generate_num_cores_field
       data:
         partition_max_cores: '#{@max_cores_by_partition.to_json}'
     help: "Number of CPU cores/threads to allocate. Max varies by partition (detected: #{@global_max_cores} cores)."
+  YAML
+  
+  field_yaml
+end
+
+# Generate the complete num_memory field definition
+def generate_num_memory_field
+  # Convert MB to GB for display
+  max_memory_gb = (@global_max_memory / 1024.0).round(1)
+  
+  field_yaml = <<~YAML
+  num_memory:
+    widget: "number_field"
+    label: "Memory per node (GB)"
+    value: 4
+    min: 1
+    max: #{max_memory_gb}
+    step: 1
+    html_options:
+      data:
+        partition_max_memory: '#{@max_memory_by_partition.to_json}'
+    help: "Amount of memory to allocate per node in GB. Max varies by partition (detected: #{max_memory_gb} GB)."
   YAML
   
   field_yaml

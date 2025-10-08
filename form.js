@@ -136,17 +136,91 @@ function updateCoresForPartition() {
   try { console.log('[cores] update: final max =', maxCores, ', value =', coresInput.value); } catch (_) {}
 }
 
+function updateMemoryForPartition() {
+  var partitionSelect = document.getElementById('batch_connect_session_context_partition');
+  var memoryInput = document.getElementById('batch_connect_session_context_num_memory');
+  
+  if (!partitionSelect || !memoryInput) {
+    console.warn('[memory] update: missing partition or memory input element');
+    return;
+  }
+
+  var selected = partitionSelect.value;
+  // Read partition_max_memory data from the memory input's dataset or attribute
+  var datasetValue = (memoryInput.dataset && memoryInput.dataset.partitionMaxMemory) ? memoryInput.dataset.partitionMaxMemory : null;
+  var attrValue = datasetValue ? null : memoryInput.getAttribute('data-partition-max-memory');
+  var optionsSource = datasetValue ? 'input-dataset' : (attrValue ? 'input-attribute' : null);
+  var optionsJson = datasetValue || attrValue;
+  
+  if (!optionsJson) {
+    console.warn('[memory] update: no data-partition-max-memory found');
+    return;
+  }
+
+  var map;
+  try {
+    map = JSON.parse(optionsJson);
+  } catch (e) {
+    console.error('[memory] update: failed to parse data-partition-max-memory JSON', e);
+    return;
+  }
+
+  var usedKey = (map && Object.prototype.hasOwnProperty.call(map, selected)) ? selected : 'all';
+  var maxMemoryMB = map[usedKey];
+  
+  if (!maxMemoryMB || maxMemoryMB <= 0) {
+    console.warn('[memory] update: invalid max memory for partition', selected);
+    return;
+  }
+
+  // Convert MB to GB
+  var maxMemoryGB = Math.round(maxMemoryMB / 1024.0 * 10) / 10;
+  
+  try {
+    console.log('[memory] update: start', {
+      selectedPartition: selected,
+      source: optionsSource,
+      usedKey: usedKey,
+      mapKeys: map ? Object.keys(map) : [],
+      maxMemoryMB: maxMemoryMB,
+      maxMemoryGB: maxMemoryGB
+    });
+  } catch (_) {}
+
+  var currentValue = parseFloat(memoryInput.value) || 4;
+
+  // Update max attribute
+  memoryInput.setAttribute('max', maxMemoryGB);
+  
+  // If current value exceeds new max, adjust it
+  if (currentValue > maxMemoryGB) {
+    memoryInput.value = maxMemoryGB;
+    try { console.log('[memory] update: adjusted value from', currentValue, 'to', maxMemoryGB); } catch (_) {}
+  }
+
+  // Update help text to show partition-specific max
+  var helpText = memoryInput.parentElement.querySelector('.form-text, .help-block');
+  if (helpText) {
+    helpText.textContent = 'Amount of memory to allocate per node in GB. Max varies by partition (detected: ' + maxMemoryGB + ' GB).';
+    try { console.log('[memory] update: updated help text to show', maxMemoryGB, 'GB'); } catch (_) {}
+  }
+  
+  try { console.log('[memory] update: final max =', maxMemoryGB, 'GB, value =', memoryInput.value); } catch (_) {}
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-  try { console.log('[gpu] DOMContentLoaded: initializing GPU options'); } catch (_) {}
+  try { console.log('[gpu] DOMContentLoaded: initializing GPU options, cores, and memory'); } catch (_) {}
   repopulateGpuTypesForPartition();
   updateCoresForPartition();
+  updateMemoryForPartition();
   
   var partitionSelect = document.getElementById('batch_connect_session_context_partition');
   if (partitionSelect) {
     partitionSelect.addEventListener('change', function () {
-      try { console.log('[gpu] partition change ->', partitionSelect.value); } catch (_) {}
+      try { console.log('[partition] change ->', partitionSelect.value); } catch (_) {}
       repopulateGpuTypesForPartition();
       updateCoresForPartition();
+      updateMemoryForPartition();
     });
   }
 });
