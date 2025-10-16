@@ -243,7 +243,7 @@ def generate_num_cores_field
     html_options:
       data:
         partition_max_cores: '#{@max_cores_by_partition.to_json}'
-    help: "Number of CPU cores/threads to allocate. Max varies by partition (detected: #{@global_max_cores} cores)."
+    help: "Number of CPU cores/threads to allocate. Max varies by partition (Maximum: #{@global_max_cores} cores)."
   YAML
   
   field_yaml
@@ -251,8 +251,8 @@ end
 
 # Generate the complete num_memory field definition
 def generate_num_memory_field
-  # Convert MB to GB for display
-  max_memory_gb = (@global_max_memory / 1024.0).round(1)
+  # Convert MB to GB for display as whole number (no decimals)
+  max_memory_gb = (@global_max_memory / 1024.0).round
   
   field_yaml = <<~YAML
   num_memory:
@@ -265,7 +265,7 @@ def generate_num_memory_field
     html_options:
       data:
         partition_max_memory: '#{@max_memory_by_partition.to_json}'
-    help: "Amount of memory to allocate per node in GB. Max varies by partition (detected: #{max_memory_gb} GB)."
+    help: "Amount of memory to allocate per node in GB. Max varies by partition (Maximum: #{max_memory_gb} GB)."
   YAML
   
   field_yaml

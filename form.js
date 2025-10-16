@@ -129,7 +129,7 @@ function updateCoresForPartition() {
   // Update help text to show partition-specific max
   var helpText = coresInput.parentElement.querySelector('.form-text, .help-block');
   if (helpText) {
-    helpText.textContent = 'Number of CPU cores/threads to allocate. Max varies by partition (detected: ' + maxCores + ' cores).';
+    helpText.textContent = 'Number of CPU cores/threads to allocate. Max varies by partition (Maximum: ' + maxCores + ' cores).';
     try { console.log('[cores] update: updated help text to show', maxCores, 'cores'); } catch (_) {}
   }
   
@@ -173,8 +173,8 @@ function updateMemoryForPartition() {
     return;
   }
 
-  // Convert MB to GB
-  var maxMemoryGB = Math.round(maxMemoryMB / 1024.0 * 10) / 10;
+  // Convert MB to GB and round to nearest whole number (no decimals)
+  var maxMemoryGB = Math.round(maxMemoryMB / 1024.0);
   
   try {
     console.log('[memory] update: start', {
@@ -201,7 +201,7 @@ function updateMemoryForPartition() {
   // Update help text to show partition-specific max
   var helpText = memoryInput.parentElement.querySelector('.form-text, .help-block');
   if (helpText) {
-    helpText.textContent = 'Amount of memory to allocate per node in GB. Max varies by partition (detected: ' + maxMemoryGB + ' GB).';
+    helpText.textContent = 'Amount of memory to allocate per node in GB. Max varies by partition (Maximum: ' + maxMemoryGB + ' GB).';
     try { console.log('[memory] update: updated help text to show', maxMemoryGB, 'GB'); } catch (_) {}
   }
   
