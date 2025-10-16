@@ -18,11 +18,11 @@ end
 @detected_by_partition    = Hash.new { |h, k| h[k] = Set.new }
 @a100_sizes_by_partition  = Hash.new { |h, k| h[k] = Set.new }
 
-# Core/CPU tracking per partition
-@max_cores_by_partition   = Hash.new(0)  # Track max cores available per partition
+# Core/CPU tracking per partition AND GPU type
+@max_cores_by_partition_and_gpu   = Hash.new { |h, k| h[k] = Hash.new(0) }
 
-# Memory tracking per partition (in MB)
-@max_memory_by_partition  = Hash.new(0)  # Track max memory available per partition
+# Memory tracking per partition AND GPU type (in MB)
+@max_memory_by_partition_and_gpu  = Hash.new { |h, k| h[k] = Hash.new(0) }
 
 @nodes_out.each_line do |line|
   # Gres=gpu:<type>:<count>
@@ -47,16 +47,12 @@ end
 
   # Extract CPU/Core information (use CPUEfctv as it represents what's schedulable)
   cpu_efctv = line[/\bCPUEfctv=(\d+)/, 1]
-  if cpu_efctv
-    cores = cpu_efctv.to_i
-    parts.each do |p|
-      @max_cores_by_partition[p] = cores if cores > @max_cores_by_partition[p]
-    end
-  end
+  cores = cpu_efctv ? cpu_efctv.to_i : 0
 
   # Extract Memory information from CfgTRES (what's actually schedulable)
   # Format: CfgTRES=cpu=64,mem=514943M,billing=64 or mem=1500G
   cfg_tres = line[/\bCfgTRES=([^\s]+)/, 1]
+  memory_mb = 0
   if cfg_tres && cfg_tres.include?('mem=')
     mem_match = cfg_tres.match(/mem=(\d+(?:\.\d+)?)([MG])/)
     if mem_match
@@ -64,8 +60,41 @@ end
       mem_unit = mem_match[2]
       # Convert to MB for consistent storage
       memory_mb = (mem_unit == 'G') ? (mem_value * 1024).to_i : mem_value.to_i
-      parts.each do |p|
-        @max_memory_by_partition[p] = memory_mb if memory_mb > @max_memory_by_partition[p]
+    end
+  end
+
+  # Determine GPU type(s) for this node
+  gpu_types_on_node = Set.new
+  
+  # Check for GPU in Gres field
+  if (m = line.match(/\bGres=gpu:(\w+)/))
+    gpu_type = m[1]
+    if gpu_type && gpu_type != 'null'
+      gpu_types_on_node << gpu_type
+    end
+  end
+  
+  # Check for A100 size variants in features
+  if feats.include?('a100-40G')
+    gpu_types_on_node << 'a100_40'
+  end
+  if feats.include?('a100-80G')
+    gpu_types_on_node << 'a100_80'
+  end
+  
+  # If no GPUs detected, this is a "none" node
+  if gpu_types_on_node.empty?
+    gpu_types_on_node << 'none'
+  end
+  
+  # Track cores and memory by partition AND GPU type
+  parts.each do |p|
+    gpu_types_on_node.each do |gpu_type|
+      if cores > @max_cores_by_partition_and_gpu[p][gpu_type]
+        @max_cores_by_partition_and_gpu[p][gpu_type] = cores
+      end
+      if memory_mb > @max_memory_by_partition_and_gpu[p][gpu_type]
+        @max_memory_by_partition_and_gpu[p][gpu_type] = memory_mb
       end
     end
   end
@@ -222,13 +251,32 @@ def generate_gpu_type_field
   field_yaml
 end
 
-# Cluster-wide max cores (for 'all' partition fallback)
-@global_max_cores = @max_cores_by_partition.values.max || 64
-@max_cores_by_partition['all'] = @global_max_cores
+# Compute "any" GPU values for each partition (max across all GPU types)
+# Also compute global fallback values for 'all' partition
+@max_cores_by_partition_and_gpu.each do |partition, gpu_hash|
+  if gpu_hash.any?
+    @max_cores_by_partition_and_gpu[partition]['any'] = gpu_hash.values.max
+  end
+end
 
-# Cluster-wide max memory (for 'all' partition fallback)
-@global_max_memory = @max_memory_by_partition.values.max || 128000
-@max_memory_by_partition['all'] = @global_max_memory
+@max_memory_by_partition_and_gpu.each do |partition, gpu_hash|
+  if gpu_hash.any?
+    @max_memory_by_partition_and_gpu[partition]['any'] = gpu_hash.values.max
+  end
+end
+
+# Compute global max values for 'all' partition fallback
+all_cores = @max_cores_by_partition_and_gpu.values.flat_map(&:values)
+all_memory = @max_memory_by_partition_and_gpu.values.flat_map(&:values)
+
+@global_max_cores = all_cores.max || 64
+@global_max_memory = all_memory.max || 128000
+
+# Set 'all' partition defaults (use global max for 'any' and 'none')
+@max_cores_by_partition_and_gpu['all']['any'] = @global_max_cores
+@max_cores_by_partition_and_gpu['all']['none'] = @global_max_cores
+@max_memory_by_partition_and_gpu['all']['any'] = @global_max_memory
+@max_memory_by_partition_and_gpu['all']['none'] = @global_max_memory
 
 # Generate the complete num_cores field definition
 def generate_num_cores_field
@@ -242,8 +290,8 @@ def generate_num_cores_field
     step: 1
     html_options:
       data:
-        partition_max_cores: '#{@max_cores_by_partition.to_json}'
-    help: "Number of CPU cores/threads to allocate. Max varies by partition (Maximum: #{@global_max_cores} cores)."
+        partition_gpu_max_cores: '#{@max_cores_by_partition_and_gpu.to_json}'
+    help: "Number of CPU cores/threads to allocate. Max varies by partition and GPU type (Maximum: #{@global_max_cores} cores)."
   YAML
   
   field_yaml
@@ -264,8 +312,8 @@ def generate_num_memory_field
     step: 1
     html_options:
       data:
-        partition_max_memory: '#{@max_memory_by_partition.to_json}'
-    help: "Amount of memory to allocate per node in GB. Max varies by partition (Maximum: #{max_memory_gb} GB)."
+        partition_gpu_max_memory: '#{@max_memory_by_partition_and_gpu.to_json}'
+    help: "Amount of memory to allocate per node in GB. Max varies by partition and GPU type (Maximum: #{max_memory_gb} GB)."
   YAML
   
   field_yaml

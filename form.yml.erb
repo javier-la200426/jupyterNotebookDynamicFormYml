@@ -24,9 +24,9 @@ begin
     f.puts "options=#{@options.inspect}"
     f.puts "partitions_seen=#{@all_partitions.inspect}"
     f.puts "partition_options_map_keys=#{@partition_options_map.keys.inspect}"
-    f.puts "max_cores_by_partition=#{@max_cores_by_partition.inspect}"
+    f.puts "max_cores_by_partition_and_gpu=#{@max_cores_by_partition_and_gpu.inspect}"
     f.puts "global_max_cores=#{@global_max_cores}"
-    f.puts "max_memory_by_partition=#{@max_memory_by_partition.inspect}"
+    f.puts "max_memory_by_partition_and_gpu=#{@max_memory_by_partition_and_gpu.inspect}"
     f.puts "global_max_memory=#{@global_max_memory}"
   end
 rescue => e
