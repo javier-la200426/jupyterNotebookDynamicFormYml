@@ -230,11 +230,84 @@ function updateMemoryForPartition() {
   try { console.log('[memory] update: final max =', maxMemoryGB, 'GB, value =', memoryInput.value); } catch (_) {}
 }
 
+function updateHoursForPartition() {
+  var partitionSelect = document.getElementById('batch_connect_session_context_partition');
+  var hoursInput = document.getElementById('batch_connect_session_context_bc_num_hours');
+  
+  if (!partitionSelect || !hoursInput) {
+    console.warn('[hours] update: missing partition or hours input element');
+    return;
+  }
+
+  var selectedPartition = partitionSelect.value;
+  
+  // Read partition_max_hours data from the hours input's dataset or attribute
+  var datasetValue = (hoursInput.dataset && hoursInput.dataset.partitionMaxHours) ? hoursInput.dataset.partitionMaxHours : null;
+  var attrValue = datasetValue ? null : hoursInput.getAttribute('data-partition-max-hours');
+  var optionsSource = datasetValue ? 'input-dataset' : (attrValue ? 'input-attribute' : null);
+  var optionsJson = datasetValue || attrValue;
+  
+  if (!optionsJson) {
+    console.warn('[hours] update: no data-partition-max-hours found');
+    return;
+  }
+
+  var map;
+  try {
+    map = JSON.parse(optionsJson);
+  } catch (e) {
+    console.error('[hours] update: failed to parse data-partition-max-hours JSON', e);
+    return;
+  }
+
+  // Lookup with fallback to 'all'
+  var maxHours = null;
+  if (map[selectedPartition]) {
+    maxHours = map[selectedPartition];
+  } else if (map['all']) {
+    maxHours = map['all'];
+  }
+  
+  try {
+    console.log('[hours] update: start', {
+      selectedPartition: selectedPartition,
+      source: optionsSource,
+      maxHours: maxHours
+    });
+  } catch (_) {}
+
+  if (!maxHours || maxHours <= 0) {
+    console.warn('[hours] update: invalid max hours for partition', selectedPartition);
+    return;
+  }
+
+  var currentValue = parseInt(hoursInput.value) || 1;
+
+  // Update max attribute
+  hoursInput.setAttribute('max', maxHours);
+  
+  // If current value exceeds new max, adjust it
+  if (currentValue > maxHours) {
+    hoursInput.value = maxHours;
+    try { console.log('[hours] update: adjusted value from', currentValue, 'to', maxHours); } catch (_) {}
+  }
+
+  // Update help text to show partition-specific max
+  var helpText = hoursInput.parentElement.querySelector('.form-text, .help-block');
+  if (helpText) {
+    helpText.textContent = 'Number of hours to run the job. Max varies by partition (Maximum: ' + maxHours + ' hours).';
+    try { console.log('[hours] update: updated help text to show', maxHours, 'hours'); } catch (_) {}
+  }
+  
+  try { console.log('[hours] update: final max =', maxHours, ', value =', hoursInput.value); } catch (_) {}
+}
+
 document.addEventListener('DOMContentLoaded', function () {
-  try { console.log('[gpu] DOMContentLoaded: initializing GPU options, cores, and memory'); } catch (_) {}
+  try { console.log('[gpu] DOMContentLoaded: initializing GPU options, cores, memory, and hours'); } catch (_) {}
   repopulateGpuTypesForPartition();
   updateCoresForPartition();
   updateMemoryForPartition();
+  updateHoursForPartition();
   
   var partitionSelect = document.getElementById('batch_connect_session_context_partition');
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
@@ -245,6 +318,7 @@ document.addEventListener('DOMContentLoaded', function () {
       repopulateGpuTypesForPartition();
       updateCoresForPartition();
       updateMemoryForPartition();
+      updateHoursForPartition();
     });
   }
   

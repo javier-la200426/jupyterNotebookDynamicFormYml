@@ -10,6 +10,9 @@ end
 
 @nodes_out = capture_stdout('scontrol show node --oneliner')
 
+# Capture partition time limits
+@partitions_info = capture_stdout('sinfo -o "%P %l"')
+
 # Parsing the SLURM output
 @detected_types = Set.new
 @a100_sizes     = Set.new # values: 'a100_40', 'a100_80'
@@ -23,6 +26,56 @@ end
 
 # Memory tracking per partition AND GPU type (in MB)
 @max_memory_by_partition_and_gpu  = Hash.new { |h, k| h[k] = Hash.new(0) }
+
+# Time limit tracking per partition (in hours)
+@max_hours_by_partition = Hash.new(0)
+
+# Parse partition time limits from sinfo
+# Helper to convert SLURM time format to hours
+def parse_slurm_time(time_str)
+  return 0 if time_str.nil? || time_str.strip.empty? || time_str == 'infinite'
+  
+  # Handle "infinite" as a very large number (30 days = 720 hours)
+  return 720 if time_str.downcase.include?('infinite')
+  
+  # Format: "D-HH:MM:SS" or "HH:MM:SS" or "MM:SS" or "UNLIMITED"
+  if time_str.include?('-')
+    # Has days component
+    days_part, time_part = time_str.split('-')
+    days = days_part.to_i
+    
+    time_components = time_part.split(':').map(&:to_i)
+    hours = days * 24 + time_components[0]
+    # Ignore minutes and seconds for simplicity
+  else
+    # No days, just time
+    time_components = time_str.split(':').map(&:to_i)
+    if time_components.length == 3
+      # HH:MM:SS
+      hours = time_components[0]
+    elsif time_components.length == 2
+      # MM:SS (treat as hours:minutes)
+      hours = time_components[0]
+    else
+      hours = time_components[0] || 0
+    end
+  end
+  
+  hours
+end
+
+@partitions_info.each_line do |line|
+  next if line.include?('PARTITION') # Skip header
+  
+  parts = line.strip.split(/\s+/)
+  next if parts.length < 2
+  
+  partition_name = parts[0].gsub('*', '') # Remove default marker
+  time_limit = parts[1]
+  
+  hours = parse_slurm_time(time_limit)
+  @max_hours_by_partition[partition_name] = hours if hours > 0
+end
 
 @nodes_out.each_line do |line|
   # Gres=gpu:<type>:<count>
@@ -268,15 +321,18 @@ end
 # Compute global max values for 'all' partition fallback
 all_cores = @max_cores_by_partition_and_gpu.values.flat_map(&:values)
 all_memory = @max_memory_by_partition_and_gpu.values.flat_map(&:values)
+all_hours = @max_hours_by_partition.values
 
 @global_max_cores = all_cores.max || 64
 @global_max_memory = all_memory.max || 128000
+@global_max_hours = all_hours.max || 72  # Default to 72 hours (3 days) if no partitions found
 
 # Set 'all' partition defaults (use global max for 'any' and 'none')
 @max_cores_by_partition_and_gpu['all']['any'] = @global_max_cores
 @max_cores_by_partition_and_gpu['all']['none'] = @global_max_cores
 @max_memory_by_partition_and_gpu['all']['any'] = @global_max_memory
 @max_memory_by_partition_and_gpu['all']['none'] = @global_max_memory
+@max_hours_by_partition['all'] = @global_max_hours
 
 # Generate the complete num_cores field definition
 def generate_num_cores_field
@@ -314,6 +370,23 @@ def generate_num_memory_field
       data:
         partition_gpu_max_memory: '#{@max_memory_by_partition_and_gpu.to_json}'
     help: "Amount of memory to allocate per node in GB. Max varies by partition and GPU type (Maximum: #{max_memory_gb} GB)."
+  YAML
+  
+  field_yaml
+end
+
+# Generate the complete bc_num_hours field definition
+def generate_num_hours_field
+  field_yaml = <<~YAML
+  bc_num_hours:
+    value: 1
+    min: 1
+    max: #{@global_max_hours}
+    step: 1
+    html_options:
+      data:
+        partition_max_hours: '#{@max_hours_by_partition.to_json}'
+    help: "Number of hours to run the job. Max varies by partition (Maximum: #{@global_max_hours} hours)."
   YAML
   
   field_yaml

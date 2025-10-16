@@ -28,6 +28,8 @@ begin
     f.puts "global_max_cores=#{@global_max_cores}"
     f.puts "max_memory_by_partition_and_gpu=#{@max_memory_by_partition_and_gpu.inspect}"
     f.puts "global_max_memory=#{@global_max_memory}"
+    f.puts "max_hours_by_partition=#{@max_hours_by_partition.inspect}"
+    f.puts "global_max_hours=#{@global_max_hours}"
   end
 rescue => e
   # swallow logging errors so the form still renders
@@ -38,6 +40,7 @@ end
 <%= generate_num_cores_field.indent(2) %>
 <%= generate_num_memory_field.indent(2) %>
 <%= generate_gpu_type_field.indent(2) %>
+<%= generate_num_hours_field.indent(2) %>
     
   working_directory:
     widget: "text_field"
@@ -62,8 +65,8 @@ form:
   - conda_extensions
   - extra_jupyter_args
   - mode
-  - bc_num_hours
   - partition
+  - bc_num_hours
   - gpu_type
   - num_cores
   - num_memory
