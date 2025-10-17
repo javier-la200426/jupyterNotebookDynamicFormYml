@@ -7,6 +7,23 @@ bc_dynamic_js: true
 <%= ERB.new(File.read(File.expand_path('partials/gpu_discovery.erb', __dir__))).result(binding) %>
 
 attributes:
+  notice:
+    widget: "text_field"
+    label: ""
+    value: ""
+    help: |
+      <div class="alert alert-warning" role="alert">
+        <strong>Important: Upcoming resource limits</strong><br/>
+        From 10/02/2025, the following resource limit (maximum simultaneous resource allocation) will be applied to all early adopters:
+        <ul style="margin: 0.5rem 0 0 1.25rem;">
+          <li>CPU: 32</li>
+          <li>CPU Memory: 256GB</li>
+          <li>GPU: 2</li>
+          <li>Maximum Job Timelimit: 48 hours</li>
+        </ul>
+      </div>
+    html_options:
+      style: "display:none"
   conda_extensions: "0"
 
   extra_jupyter_args: ""
@@ -62,6 +79,7 @@ end
 
 
 form:
+  - notice
   - conda_extensions
   - extra_jupyter_args
   - mode
