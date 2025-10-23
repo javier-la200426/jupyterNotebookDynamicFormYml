@@ -8,11 +8,11 @@ bc_dynamic_js: true
 
 attributes:
   notice:
-    widget: "text_field"
+    widget: "check_box"
     label: ""
-    value: ""
+    value: false
     help: |
-      <div class="alert alert-warning" role="alert">
+      <div id="resource-limits-notice" class="alert alert-warning alert-dismissible fade show" role="alert">
         <strong>Important: Upcoming resource limits</strong><br/>
         From 10/02/2025, the following resource limit (maximum simultaneous resource allocation) will be applied to all early adopters:
         <ul style="margin: 0.5rem 0 0 1.25rem;">
@@ -21,9 +21,10 @@ attributes:
           <li>GPU: 2</li>
           <li>Maximum Job Timelimit: 48 hours</li>
         </ul>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" onclick="document.getElementById('resource-limits-notice').style.display='none'" aria-label="Close"></button>
       </div>
     html_options:
-      style: "display:none"
+      style: "display: none;"
   conda_extensions: "0"
 
   extra_jupyter_args: ""
