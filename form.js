@@ -1,3 +1,104 @@
+function updateGpuAvailabilityWarning() {
+  var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
+  if (!gpuTypeSelect) {
+    console.warn('[gpu-warning] update: missing gpu select element');
+    return;
+  }
+
+  var selectedGpuType = gpuTypeSelect.value;
+  
+  // Read unavailable_gpus data from the select's dataset or attribute
+  var datasetValue = (gpuTypeSelect.dataset && gpuTypeSelect.dataset.unavailableGpus) ? gpuTypeSelect.dataset.unavailableGpus : null;
+  var attrValue = datasetValue ? null : gpuTypeSelect.getAttribute('data-unavailable-gpus');
+  var unavailableJson = datasetValue || attrValue;
+  
+  if (!unavailableJson) {
+    console.warn('[gpu-warning] update: no data-unavailable-gpus found');
+    return;
+  }
+
+  var unavailableMap;
+  try {
+    unavailableMap = JSON.parse(unavailableJson);
+  } catch (e) {
+    console.error('[gpu-warning] update: failed to parse data-unavailable-gpus JSON', e);
+    return;
+  }
+
+  // Find or create the warning container
+  var warningId = 'gpu-unavailable-warning';
+  var existingWarning = document.getElementById(warningId);
+  
+  // Check if the selected GPU type is unavailable
+  var isUnavailable = unavailableMap.hasOwnProperty(selectedGpuType) && selectedGpuType !== 'any' && selectedGpuType !== 'none';
+  
+  try {
+    console.log('[gpu-warning] update:', {
+      selectedGpuType: selectedGpuType,
+      isUnavailable: isUnavailable,
+      unavailableMap: unavailableMap
+    });
+  } catch (_) {}
+  
+  if (isUnavailable) {
+    var gpuLabel = unavailableMap[selectedGpuType];
+    var warningMessage = 'All nodes with ' + gpuLabel + ' GPUs are currently DOWN or DRAINED. Your job will remain queued until nodes become available.';
+    
+    if (existingWarning) {
+      // Update existing warning message
+      var messageSpan = existingWarning.querySelector('.gpu-warning-message');
+      if (messageSpan) {
+        // Clear and rebuild the content to preserve the "Warning: " prefix
+        messageSpan.innerHTML = '';
+        var strong = document.createElement('strong');
+        strong.textContent = 'Warning: ';
+        messageSpan.appendChild(strong);
+        messageSpan.appendChild(document.createTextNode(warningMessage));
+      }
+      existingWarning.style.display = 'block';
+    } else {
+      // Create new warning
+      var warning = document.createElement('div');
+      warning.id = warningId;
+      warning.className = 'alert alert-danger alert-dismissible fade show';
+      warning.setAttribute('role', 'alert');
+      warning.style.marginTop = '10px';
+      
+      var content = document.createElement('span');
+      content.className = 'gpu-warning-message';
+      var strong = document.createElement('strong');
+      strong.textContent = 'Warning: ';
+      content.appendChild(strong);
+      content.appendChild(document.createTextNode(warningMessage));
+      
+      var closeButton = document.createElement('button');
+      closeButton.type = 'button';
+      closeButton.className = 'btn-close';
+      closeButton.setAttribute('data-bs-dismiss', 'alert');
+      closeButton.setAttribute('aria-label', 'Close');
+      
+      // Add manual click handler as fallback
+      closeButton.addEventListener('click', function() {
+        warning.style.display = 'none';
+      });
+      
+      warning.appendChild(content);
+      warning.appendChild(closeButton);
+      
+      // Insert warning after the GPU type select's form group (Bootstrap 5 uses .mb-3)
+      var formGroup = gpuTypeSelect.closest('.mb-3') || gpuTypeSelect.closest('.form-group');
+      if (formGroup && formGroup.parentNode) {
+        formGroup.parentNode.insertBefore(warning, formGroup.nextSibling);
+      }
+    }
+  } else {
+    // Hide warning if GPU is available or if 'any' is selected
+    if (existingWarning) {
+      existingWarning.style.display = 'none';
+    }
+  }
+}
+
 function repopulateGpuTypesForPartition() {
   var partitionSelect = document.getElementById('batch_connect_session_context_partition');
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
@@ -303,11 +404,12 @@ function updateHoursForPartition() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
-  try { console.log('[gpu] DOMContentLoaded: initializing GPU options, cores, memory, and hours'); } catch (_) {}
+  try { console.log('[gpu] DOMContentLoaded: initializing GPU options, cores, memory, hours, and availability warnings'); } catch (_) {}
   repopulateGpuTypesForPartition();
   updateCoresForPartition();
   updateMemoryForPartition();
   updateHoursForPartition();
+  updateGpuAvailabilityWarning();
   
   var partitionSelect = document.getElementById('batch_connect_session_context_partition');
   var gpuTypeSelect = document.getElementById('batch_connect_session_context_gpu_type');
@@ -319,6 +421,7 @@ document.addEventListener('DOMContentLoaded', function () {
       updateCoresForPartition();
       updateMemoryForPartition();
       updateHoursForPartition();
+      updateGpuAvailabilityWarning();
     });
   }
   
@@ -327,6 +430,7 @@ document.addEventListener('DOMContentLoaded', function () {
       try { console.log('[gpu_type] change ->', gpuTypeSelect.value); } catch (_) {}
       updateCoresForPartition();
       updateMemoryForPartition();
+      updateGpuAvailabilityWarning();
     });
   }
 });

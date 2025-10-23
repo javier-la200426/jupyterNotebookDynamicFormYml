@@ -27,10 +27,27 @@ end
 # Memory tracking per partition AND GPU type (in MB)
 @max_memory_by_partition_and_gpu  = Hash.new { |h, k| h[k] = Hash.new(0) }
 
+# Track node availability per GPU type (for unavailability warnings)
+@gpu_type_node_states = Hash.new { |h, k| h[k] = { available: 0, unavailable: 0 } }
+
 # Time limit tracking per partition (in hours)
 @max_hours_by_partition = Hash.new(0)
 
 # Parse partition time limits from sinfo
+# Helper to determine if a node state is available for scheduling
+def node_is_available?(state_str)
+  return false if state_str.nil? || state_str.strip.empty?
+  
+  # Convert to uppercase for case-insensitive matching
+  state = state_str.upcase
+  
+  # States that make a node unavailable
+  unavailable_states = ['DOWN', 'DRAIN', 'DRAINING', 'DRAINED', 'FAIL', 'FAILING', 'MAINT', 'RESERVED', 'NOT_RESPONDING']
+  
+  # Check if any unavailable state is present
+  unavailable_states.any? { |s| state.include?(s) } ? false : true
+end
+
 # Helper to convert SLURM time format to hours
 def parse_slurm_time(time_str)
   return 0 if time_str.nil? || time_str.strip.empty? || time_str == 'infinite'
@@ -94,6 +111,10 @@ end
   @a100_sizes << 'a100_40' if feats.include?('a100-40G')
   @a100_sizes << 'a100_80' if feats.include?('a100-80G')
 
+  # Extract node state for availability tracking
+  node_state = line[/\bState=(\S+)/, 1]
+  is_available = node_is_available?(node_state)
+
   # Partition list for this node
   parts_str = line[/\bPartitions=(\S+)/, 1]
   parts = parts_str ? parts_str.split(',') : []
@@ -140,6 +161,17 @@ end
     gpu_types_on_node << 'none'
   end
   
+  # Track node availability for each GPU type on this node
+  gpu_types_on_node.each do |gpu_type|
+    next if gpu_type == 'none'  # Don't track availability for non-GPU nodes
+    
+    if is_available
+      @gpu_type_node_states[gpu_type][:available] += 1
+    else
+      @gpu_type_node_states[gpu_type][:unavailable] += 1
+    end
+  end
+  
   # Track cores and memory by partition AND GPU type
   parts.each do |p|
     gpu_types_on_node.each do |gpu_type|
@@ -177,8 +209,22 @@ if !@a100_sizes.empty?
   @detected_types.delete('a100')
 end
 
+# Determine which GPU types are completely unavailable (all nodes down/drained)
+@unavailable_gpu_types = Set.new
+@gpu_type_node_states.each do |gpu_type, counts|
+  # If this GPU type has nodes but ALL are unavailable, mark it
+  if counts[:available] == 0 && counts[:unavailable] > 0
+    @unavailable_gpu_types << gpu_type
+  end
+end
+
+# TEMPORARY TEST: Force a GPU type to be unavailable for testing the warning
+
+#IMPORTANT LINE!!
+# @unavailable_gpu_types << 'a100_40'  # TEST ONLY - REMOVE AFTER TESTING
+
 # Human-friendly labels for known GPU types (for display purposes)
-label_map = {
+@label_map = {
   'h200'        => 'H200 - 140GB',
   'h100'        => 'H100 - 80GB',
   'a100'        => 'A100',
@@ -208,15 +254,15 @@ else
   @options << ['any',  'any']
 
   # Add A100 size-specific entries first if discovered
-  @options << [label_map['a100_40'], 'a100_40'] if @a100_sizes.include?('a100_40')
-  @options << [label_map['a100_80'], 'a100_80'] if @a100_sizes.include?('a100_80')
+  @options << [@label_map['a100_40'], 'a100_40'] if @a100_sizes.include?('a100_40')
+  @options << [@label_map['a100_80'], 'a100_80'] if @a100_sizes.include?('a100_80')
 
   # Then add remaining detected types
   remaining = @detected_types.to_a
   remaining.sort_by! { |t| priority.fetch(t, 999) }
   remaining.each do |t|
     next if %w[a100_40 a100_80].include?(t) # already added above
-    label = label_map[t] || t.upcase
+    label = @label_map[t] || t.upcase
     @options << [label, t]
   end
 end
@@ -237,10 +283,10 @@ build_opts = lambda do |types_set, a100_size_set|
 
     # Prefer size-specific A100 entries
     if a100_size_set.include?('a100_40')
-      local << [label_map['a100_40'], 'a100_40']
+      local << [@label_map['a100_40'], 'a100_40']
     end
     if a100_size_set.include?('a100_80')
-      local << [label_map['a100_80'], 'a100_80']
+      local << [@label_map['a100_80'], 'a100_80']
     end
 
     remaining_local = types_set.to_a
@@ -250,7 +296,7 @@ build_opts = lambda do |types_set, a100_size_set|
     remaining_local.sort_by! { |t| priority.fetch(t, 999) }
     remaining_local.each do |t|
       next if %w[a100_40 a100_80].include?(t)
-      label = label_map[t] || t.upcase
+      label = @label_map[t] || t.upcase
       local << [label, t]
     end
   end
@@ -268,6 +314,13 @@ end
 
 # Generate the complete gpu_type field definition
 def generate_gpu_type_field
+  # Build a map of unavailable GPU types with their friendly labels for warnings
+  unavailable_map = {}
+  @unavailable_gpu_types.each do |gpu_type|
+    label = @label_map[gpu_type] || gpu_type.upcase
+    unavailable_map[gpu_type] = label
+  end
+  
   field_yaml = <<~YAML
   gpu_type:
     widget: "select"
@@ -275,6 +328,7 @@ def generate_gpu_type_field
     html_options:
       data:
         partition_options: '#{@partition_options_map.to_json}'
+        unavailable_gpus: '#{unavailable_map.to_json}'
   YAML
 
   if @dynamic_failed

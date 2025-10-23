@@ -47,6 +47,8 @@ begin
     f.puts "global_max_memory=#{@global_max_memory}"
     f.puts "max_hours_by_partition=#{@max_hours_by_partition.inspect}"
     f.puts "global_max_hours=#{@global_max_hours}"
+    f.puts "unavailable_gpu_types=#{@unavailable_gpu_types.to_a.inspect}"
+    f.puts "gpu_type_node_states=#{@gpu_type_node_states.inspect}"
   end
 rescue => e
   # swallow logging errors so the form still renders
