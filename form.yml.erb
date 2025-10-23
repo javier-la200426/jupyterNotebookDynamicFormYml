@@ -8,9 +8,9 @@ bc_dynamic_js: true
 
 attributes:
   notice:
-    widget: "check_box"
-    label: ""
-    value: false
+    widget: "text_field"
+    label: "Notice"
+    value: ""
     help: |
       <div id="resource-limits-notice" class="alert alert-warning alert-dismissible fade show" role="alert">
         <strong>Important: Upcoming resource limits</strong><br/>
@@ -25,6 +25,7 @@ attributes:
       </div>
     html_options:
       style: "display: none;"
+      readonly: true
   conda_extensions: "0"
 
   extra_jupyter_args: ""
