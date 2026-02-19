@@ -52,11 +52,20 @@ bc_dynamic_js: true
 ```
 
 ### 3) Include the dynamic GPU discovery partial
-Near the top of `form.yml.erb`, add:
+Near the top of `form.yml.erb`, add the include inside a code-only block (`<% %>`), and place `cluster` **after** it:
 ```erb
-<%= ERB.new(File.read(File.expand_path('partials/gpu_discovery.erb', __dir__))).result(binding) %>
+---
+<%
+_partial_path = File.expand_path('partials/gpu_discovery.erb', __dir__)
+_gpu_result = ERB.new(File.read(_partial_path)).result(binding)
+%>
+
+cluster: "pax"
+
+bc_dynamic_js: true
 ```
-This loads the Ruby helpers and computes the dynamic data before fields are rendered.
+
+**Important:** `cluster:` must appear **after** the include block, not before it. `ERB.new(...).result(binding)` resets the outer ERB's output buffer, silently wiping any YAML output that came before it (including `cluster:`). This is a Ruby ERB quirk when sharing the binding between nested templates.
 
 ### 4) Replace static resource fields with dynamic ones
 Remove any static includes for `num_cores`, `num_memory`, `gpu_type`, and `bc_num_hours`. Then insert these where your attributes are defined:
@@ -162,11 +171,16 @@ Here’s a compact template for integrating into an existing app while keeping y
 
 ```erb
 ---
+<%
+# Include gpu_discovery FIRST, inside a code-only block.
+# IMPORTANT: cluster: must come AFTER this block (see note below).
+_partial_path = File.expand_path('partials/gpu_discovery.erb', __dir__)
+_gpu_result = ERB.new(File.read(_partial_path)).result(binding)
+%>
+
 cluster: "pax"
 
 bc_dynamic_js: true
-
-<%= ERB.new(File.read(File.expand_path('partials/gpu_discovery.erb', __dir__))).result(binding) %>
 
 attributes:
   # Your existing attributes ...
@@ -190,6 +204,8 @@ form:
 ```
 
 Place `form.js` at the app root. The generated `gpu_type` field will load it automatically.
+
+**Note:** Never place `cluster:` or other important top-level YAML keys *before* the `ERB.new(...).result(binding)` call. The inner ERB resets the shared output buffer, silently discarding any prior output.
 
 ---
 
