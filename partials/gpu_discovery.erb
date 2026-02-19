@@ -445,5 +445,36 @@ def generate_num_hours_field
   
   field_yaml
 end
+
+# =============================================================================
+# DEBUG LOGGING - Set to true to enable logging to ~/javi_gpu_debug.log
+# =============================================================================
+DEBUG_GPU_DISCOVERY = false
+
+if DEBUG_GPU_DISCOVERY
+  begin
+    debug_log = File.join(ENV['HOME'], 'javi_gpu_debug.log')
+    File.open(debug_log, 'a') do |f|
+      f.puts "=== #{Time.now} ==="
+      f.puts "PATH=#{ENV['PATH']}"
+      f.puts "nodes_out_bytes=#{@nodes_out&.bytesize}"
+      f.puts "detected_types=#{@detected_types.to_a.inspect}"
+      f.puts "a100_sizes=#{@a100_sizes.to_a.inspect}"
+      f.puts "options=#{@options.inspect}"
+      f.puts "partitions_seen=#{@all_partitions.inspect}"
+      f.puts "partition_options_map_keys=#{@partition_options_map.keys.inspect}"
+      f.puts "max_cores_by_partition_and_gpu=#{@max_cores_by_partition_and_gpu.inspect}"
+      f.puts "global_max_cores=#{@global_max_cores}"
+      f.puts "max_memory_by_partition_and_gpu=#{@max_memory_by_partition_and_gpu.inspect}"
+      f.puts "global_max_memory=#{@global_max_memory}"
+      f.puts "max_hours_by_partition=#{@max_hours_by_partition.inspect}"
+      f.puts "global_max_hours=#{@global_max_hours}"
+      f.puts "unavailable_gpu_types=#{@unavailable_gpu_types.to_a.inspect}"
+      f.puts "gpu_type_node_states=#{@gpu_type_node_states.inspect}"
+    end
+  rescue => e
+    # swallow logging errors so the form still renders
+  end
+end
 %>
 
