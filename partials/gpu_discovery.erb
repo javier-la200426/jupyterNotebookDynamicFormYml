@@ -6,6 +6,8 @@ require 'set'
 def capture_stdout(cmd)
   stdout, status = Open3.capture2(cmd)
   status.success? ? stdout : ''
+rescue => _e
+  ''
 end
 
 @nodes_out = capture_stdout('scontrol show node --oneliner')

@@ -1,10 +1,16 @@
 ---
+<%
+# Evaluate gpu_discovery.erb and capture its result. We use result(binding)
+# so methods/variables defined inside become available here. IMPORTANT:
+# cluster: "pax" must appear AFTER this block because result(binding)
+# resets the ERB output buffer, wiping anything output before it.
+_partial_path = File.expand_path('partials/gpu_discovery.erb', __dir__)
+_gpu_result = ERB.new(File.read(_partial_path)).result(binding)
+%>
 
 cluster: "pax"
 
 bc_dynamic_js: true
-
-<%= ERB.new(File.read(File.expand_path('partials/gpu_discovery.erb', __dir__))).result(binding) %>
 
 attributes:
   notice:
