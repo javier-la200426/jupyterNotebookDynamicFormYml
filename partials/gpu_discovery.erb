@@ -96,6 +96,16 @@ end
   @max_hours_by_partition[partition_name] = hours if hours > 0
 end
 
+# Collect user-accessible partition names (sinfo without --all filters by access)
+@user_partitions = []
+@partitions_info.each_line do |line|
+  next if line.include?('PARTITION')
+  parts = line.strip.split(/\s+/)
+  next if parts.length < 2
+  partition_name = parts[0].gsub('*', '')
+  @user_partitions << partition_name
+end
+
 @nodes_out.each_line do |line|
   # Gres=gpu:<type>:<count>
   if (m = line.match(/\bGres=gpu:(\w+)/))
@@ -307,6 +317,7 @@ end
 
 # Collect all partitions seen in either map
 @all_partitions = (@detected_by_partition.keys + @a100_sizes_by_partition.keys).uniq
+@all_partitions = @all_partitions.select { |p| @user_partitions.include?(p) }
 @all_partitions.each do |p|
   @partition_options_map[p] = build_opts.call(@detected_by_partition[p], @a100_sizes_by_partition[p])
 end
@@ -448,6 +459,23 @@ def generate_num_hours_field
   field_yaml
 end
 
+# Generate the partition field definition using user-accessible partitions
+def generate_partition_field
+  field_yaml = <<~YAML
+  partition:
+    widget: "select"
+    label: "Partition"
+    help: "Partitions available to you (dynamically detected via SLURM)."
+    options:
+  YAML
+
+  @user_partitions.each do |p|
+    field_yaml += "    - [\"#{p}\", \"#{p}\"]\n"
+  end
+
+  field_yaml
+end
+
 # =============================================================================
 # DEBUG LOGGING - Set to true to enable logging to ~/javi_gpu_debug.log
 # =============================================================================
@@ -463,6 +491,7 @@ if DEBUG_GPU_DISCOVERY
       f.puts "detected_types=#{@detected_types.to_a.inspect}"
       f.puts "a100_sizes=#{@a100_sizes.to_a.inspect}"
       f.puts "options=#{@options.inspect}"
+      f.puts "user_partitions=#{@user_partitions.inspect}"
       f.puts "partitions_seen=#{@all_partitions.inspect}"
       f.puts "partition_options_map_keys=#{@partition_options_map.keys.inspect}"
       f.puts "max_cores_by_partition_and_gpu=#{@max_cores_by_partition_and_gpu.inspect}"

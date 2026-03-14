@@ -36,7 +36,7 @@ attributes:
 
   extra_jupyter_args: ""
 
-<%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/all_partition.yml").indent(2) %>
+<%= generate_partition_field.indent(2) %>
 
 <%= generate_num_cores_field.indent(2) %>
 <%= generate_num_memory_field.indent(2) %>
