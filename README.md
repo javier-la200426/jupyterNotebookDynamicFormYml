@@ -140,7 +140,8 @@ Customization points in `gpu_discovery.erb`:
 ## How it works (frontend)
 `form.js` wires up event handlers and on-load initialization:
 - On load and when `partition`/`gpu_type` change, it:
-  - Rebuilds GPU options for the selected partition
+  - Hides the GPU architecture dropdown entirely for partitions without GPUs (sets gpu_type to `none` so cores/memory use non-GPU values)
+  - Shows and rebuilds GPU options when switching to a partition that has GPUs
   - Sets the max/value/help text for cores, memory (GB), and hours
   - Shows a red banner if the selected GPU type is currently unavailable
 - Reads JSON from the fields’ `data-*` attributes and logs to the console for troubleshooting.
@@ -154,7 +155,8 @@ Requirements:
 ## Testing checklist
 - Open the app form and check the browser console for `[gpu]`, `[cores]`, `[memory]`, `[hours]`, `[gpu-warning]` logs.
 - Change `partition` and verify:
-  - `gpu_type` options refresh and include `any` and the detected types
+  - For non-GPU partitions (e.g., `batch`): `gpu_type` dropdown is hidden, cores/memory use non-GPU values
+  - For GPU partitions (e.g., `gpu`, `preempt`): `gpu_type` dropdown reappears with partition-specific GPU options
   - `num_cores`, `num_memory`, `bc_num_hours` update their max and help text
 - Select a specific GPU type; if it’s marked unavailable, a red warning appears.
 - If discovery fails, the form falls back to minimal defaults and displays a help message.

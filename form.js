@@ -124,7 +124,38 @@ function repopulateGpuTypesForPartition() {
     console.error('[gpu] repopulate: failed to parse data-partition-options JSON', e);
     return;
   }
-  var usedKey = (map && Object.prototype.hasOwnProperty.call(map, selected)) ? selected : 'all';
+  // Check if the selected partition has GPU options in the map
+  var partitionHasGpus = map && Object.prototype.hasOwnProperty.call(map, selected);
+  var gpuFormGroup = gpuTypeSelect.closest('.mb-3') || gpuTypeSelect.closest('.form-group');
+
+  if (!partitionHasGpus) {
+    // Partition has no GPUs — hide the GPU field and set to 'none'
+    try {
+      console.log('[gpu] repopulate: partition "' + selected + '" has no GPUs, hiding gpu_type field');
+    } catch (_) {}
+
+    if (gpuFormGroup) {
+      gpuFormGroup.style.display = 'none';
+    }
+
+    // Clear options and set a 'none' value so cores/memory lookups use the 'none' GPU type
+    while (gpuTypeSelect.firstChild) {
+      gpuTypeSelect.removeChild(gpuTypeSelect.firstChild);
+    }
+    var noneOpt = document.createElement('option');
+    noneOpt.textContent = 'none';
+    noneOpt.value = 'none';
+    gpuTypeSelect.appendChild(noneOpt);
+    gpuTypeSelect.value = 'none';
+    return;
+  }
+
+  // Partition has GPUs — show the field
+  if (gpuFormGroup) {
+    gpuFormGroup.style.display = '';
+  }
+
+  var usedKey = selected;
   var opts = map[usedKey] || [];
   try {
     console.log('[gpu] repopulate: start', {
@@ -132,7 +163,7 @@ function repopulateGpuTypesForPartition() {
       source: optionsSource,
       usedKey: usedKey,
       mapKeys: map ? Object.keys(map) : [],
-      rawLength: (map[usedKey] || []).length
+      rawLength: opts.length
     });
   } catch (_) {}
 
