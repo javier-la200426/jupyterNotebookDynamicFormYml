@@ -13,14 +13,12 @@ script:
   skip_gres = gpu_type == "none" || ["batch", "largemem", "rc2", "pangolinlab", "ruiguolab", "shushkovlab", "vaseylab"].include?(partition)
 %>
 <% unless skip_gres %>
-  <% if gpu_type == "a100_40" %>
-    - "--gres=gpu:a100:1"
-    - "--constraint=a100-40G"
-  <% elsif gpu_type == "a100_80" %>
-    - "--gres=gpu:a100:1"
-    - "--constraint=a100-80G"
-  <% elsif gpu_type == "any" %>
+  <% if gpu_type == "any" %>
     - "--gres=gpu:1"
+  <% elsif gpu_type.include?("-") %>
+    <%# Feature-variant id like 'a100-80G': base is the SLURM gres name, full id is a constraint %>
+    - "--gres=gpu:<%= gpu_type.split('-', 2).first %>:1"
+    - "--constraint=<%= gpu_type %>"
   <% else %>
     - "--gres=gpu:<%= gpu_type %>:1"
   <% end %>
