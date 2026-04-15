@@ -430,7 +430,17 @@ def generate_num_hours_field
 end
 
 # Generate the partition field definition using user-accessible partitions
-def generate_partition_field
+# filter: :all (default), :gpu (GPU partitions only), :cpu (CPU-only partitions)
+def generate_partition_field(filter: :all)
+  filtered = @user_partitions.select do |p|
+    has_gpu = !@detected_by_partition[p].empty?
+    case filter
+    when :gpu then has_gpu
+    when :cpu then !has_gpu
+    else true
+    end
+  end
+
   field_yaml = <<~YAML
   partition:
     widget: "select"
@@ -439,7 +449,7 @@ def generate_partition_field
     options:
   YAML
 
-  @user_partitions.each do |p|
+  filtered.each do |p|
     field_yaml += "    - [\"#{p}\", \"#{p}\"]\n"
   end
 

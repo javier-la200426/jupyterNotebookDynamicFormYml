@@ -80,6 +80,10 @@ Remove any static includes for `partition`, `num_cores`, `num_memory`, `gpu_type
 <%= generate_num_hours_field.indent(2) %>
 ```
 - The `partition` field is now dynamically generated — it uses `sinfo` (without `--all`) which SLURM automatically filters to only partitions the current user can access. This replaces the old static `all_partition.yml` include.
+- `generate_partition_field` accepts an optional `filter:` keyword to restrict which partitions appear in the dropdown:
+  - `generate_partition_field` — shows all user-accessible partitions (default, equivalent to `filter: :all`)
+  - `generate_partition_field(filter: :gpu)` — shows only partitions that have GPU nodes (useful for GPU-only apps)
+  - `generate_partition_field(filter: :cpu)` — shows only CPU-only partitions
 - The generated `gpu_type` field references `javascript: "form.js"`, so make sure `form.js` is present at the app root.
 
 ### 5) Update the form order
