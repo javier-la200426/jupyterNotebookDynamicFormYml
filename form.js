@@ -272,7 +272,9 @@ function updateCoresForPartition() {
   // Update help text to show partition+GPU specific max
   var helpText = coresInput.parentElement.querySelector('.form-text, .help-block');
   if (helpText) {
-    helpText.textContent = 'Number of CPU cores/threads to allocate. Max varies by partition and GPU type (Maximum: ' + maxCores + ' cores).';
+    var coresFilter = (coresInput.dataset && coresInput.dataset.partitionFilter) || coresInput.getAttribute('data-partition-filter');
+    var coresVariesBy = (coresFilter === 'cpu' || selectedGpuType === 'none') ? 'partition' : 'partition and GPU type';
+    helpText.textContent = 'Number of CPU cores/threads to allocate. Max varies by ' + coresVariesBy + ' (Maximum: ' + maxCores + ' cores).';
     try { console.log('[cores] update: updated help text to show', maxCores, 'cores'); } catch (_) {}
   }
   
@@ -355,7 +357,9 @@ function updateMemoryForPartition() {
   // Update help text to show partition+GPU specific max
   var helpText = memoryInput.parentElement.querySelector('.form-text, .help-block');
   if (helpText) {
-    helpText.textContent = 'Amount of memory to allocate per node in GB. Max varies by partition and GPU type (Maximum: ' + maxMemoryGB + ' GB).';
+    var memoryFilter = (memoryInput.dataset && memoryInput.dataset.partitionFilter) || memoryInput.getAttribute('data-partition-filter');
+    var memoryVariesBy = (memoryFilter === 'cpu' || selectedGpuType === 'none') ? 'partition' : 'partition and GPU type';
+    helpText.textContent = 'Amount of memory to allocate per node in GB. Max varies by ' + memoryVariesBy + ' (Maximum: ' + maxMemoryGB + ' GB).';
     try { console.log('[memory] update: updated help text to show', maxMemoryGB, 'GB'); } catch (_) {}
   }
   

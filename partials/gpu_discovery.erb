@@ -15,6 +15,34 @@ end
 # Capture partition time limits
 @partitions_info = capture_stdout('sinfo -o "%P %l"')
 
+# Capture partition scheduling caps (MaxMemPerNode, MaxCPUsPerNode).
+# Node CfgTRES reports physical mem/cpus, but the partition can cap what's
+# actually schedulable (e.g. batch nodes have 1008 GB but MaxMemPerNode=503 GB).
+@partitions_detail = capture_stdout('scontrol show partition --oneliner')
+@partition_max_mem_mb = {}
+@partition_max_cpus   = {}
+
+@partitions_detail.each_line do |line|
+  name = line[/\bPartitionName=(\S+)/, 1]
+  next unless name
+
+  if (m = line.match(/\bMaxMemPerNode=(\S+)/))
+    raw = m[1]
+    unless raw.nil? || raw.upcase.start_with?('UNLIMITED')
+      mb = raw.to_i
+      @partition_max_mem_mb[name] = mb if mb > 0
+    end
+  end
+
+  if (m = line.match(/\bMaxCPUsPerNode=(\S+)/))
+    raw = m[1]
+    unless raw.nil? || raw.upcase.start_with?('UNLIMITED')
+      n = raw.to_i
+      @partition_max_cpus[name] = n if n > 0
+    end
+  end
+end
+
 # Parsing the SLURM output
 @detected_types = Set.new
 @detected_gres_names = Set.new
@@ -341,6 +369,22 @@ def generate_gpu_type_field
   field_yaml
 end
 
+# Clamp aggregated per-partition values by the partition-level scheduling caps
+# (MaxMemPerNode, MaxCPUsPerNode from `scontrol show partition`). Must happen
+# before we compute 'any' / 'all' / @global_max_* so those reflect what's
+# actually schedulable.
+@max_memory_by_partition_and_gpu.each do |partition, gpu_hash|
+  cap = @partition_max_mem_mb[partition]
+  next unless cap
+  gpu_hash.each { |gpu, val| gpu_hash[gpu] = cap if val > cap }
+end
+
+@max_cores_by_partition_and_gpu.each do |partition, gpu_hash|
+  cap = @partition_max_cpus[partition]
+  next unless cap
+  gpu_hash.each { |gpu, val| gpu_hash[gpu] = cap if val > cap }
+end
+
 # Compute "any" GPU values for each partition (max across all GPU types)
 # Also compute global fallback values for 'all' partition
 @max_cores_by_partition_and_gpu.each do |partition, gpu_hash|
@@ -371,30 +415,66 @@ all_hours = @max_hours_by_partition.values
 @max_memory_by_partition_and_gpu['all']['none'] = @global_max_memory
 @max_hours_by_partition['all'] = @global_max_hours
 
+# Select partitions matching the filter (:all, :gpu, :cpu)
+def partitions_for_filter(filter)
+  @user_partitions.select do |p|
+    has_gpu = !@detected_by_partition[p].empty?
+    case filter
+    when :gpu then has_gpu
+    when :cpu then !has_gpu
+    else true
+    end
+  end
+end
+
+# Scope a partition->gpu->value map to the filtered partitions.
+# Preserves the 'all' fallback so JS lookups still work.
+def scope_partition_gpu_map(map, filter)
+  allowed = partitions_for_filter(filter)
+  scoped = map.select { |k, _| allowed.include?(k) || k == 'all' }
+  scoped
+end
+
+def scope_partition_map(map, filter)
+  allowed = partitions_for_filter(filter)
+  map.select { |k, _| allowed.include?(k) || k == 'all' }
+end
+
 # Generate the complete num_cores field definition
-def generate_num_cores_field
+def generate_num_cores_field(filter: :all)
+  scoped_map = scope_partition_gpu_map(@max_cores_by_partition_and_gpu, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values.flat_map(&:values)
+  scoped_max = partition_max_values.max || @global_max_cores
+  scoped_map['all'] = { 'any' => scoped_max, 'none' => scoped_max }
+  varies_by = filter == :cpu ? 'partition' : 'partition and GPU type'
+
   field_yaml = <<~YAML
   num_cores:
     widget: "number_field"
     label: "Number of CPU cores"
     value: 1
     min: 1
-    max: #{@global_max_cores}
+    max: #{scoped_max}
     step: 1
     html_options:
       data:
-        partition_gpu_max_cores: '#{@max_cores_by_partition_and_gpu.to_json}'
-    help: "Number of CPU cores/threads to allocate. Max varies by partition and GPU type (Maximum: #{@global_max_cores} cores)."
+        partition_gpu_max_cores: '#{scoped_map.to_json}'
+        partition_filter: '#{filter}'
+    help: "Number of CPU cores/threads to allocate. Max varies by #{varies_by} (Maximum: #{scoped_max} cores)."
   YAML
-  
+
   field_yaml
 end
 
 # Generate the complete num_memory field definition
-def generate_num_memory_field
-  # Convert MB to GB for display as whole number (no decimals)
-  max_memory_gb = (@global_max_memory / 1024.0).round
-  
+def generate_num_memory_field(filter: :all)
+  scoped_map = scope_partition_gpu_map(@max_memory_by_partition_and_gpu, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values.flat_map(&:values)
+  scoped_max_mb = partition_max_values.max || @global_max_memory
+  scoped_map['all'] = { 'any' => scoped_max_mb, 'none' => scoped_max_mb }
+  max_memory_gb = (scoped_max_mb / 1024.0).round
+  varies_by = filter == :cpu ? 'partition' : 'partition and GPU type'
+
   field_yaml = <<~YAML
   num_memory:
     widget: "number_field"
@@ -405,27 +485,33 @@ def generate_num_memory_field
     step: 1
     html_options:
       data:
-        partition_gpu_max_memory: '#{@max_memory_by_partition_and_gpu.to_json}'
-    help: "Amount of memory to allocate per node in GB. Max varies by partition and GPU type (Maximum: #{max_memory_gb} GB)."
+        partition_gpu_max_memory: '#{scoped_map.to_json}'
+        partition_filter: '#{filter}'
+    help: "Amount of memory to allocate per node in GB. Max varies by #{varies_by} (Maximum: #{max_memory_gb} GB)."
   YAML
-  
+
   field_yaml
 end
 
 # Generate the complete bc_num_hours field definition
-def generate_num_hours_field
+def generate_num_hours_field(filter: :all)
+  scoped_map = scope_partition_map(@max_hours_by_partition, filter)
+  partition_max_values = scoped_map.reject { |k, _| k == 'all' }.values
+  scoped_max = partition_max_values.max || @global_max_hours
+  scoped_map['all'] = scoped_max
+
   field_yaml = <<~YAML
   bc_num_hours:
     value: 1
     min: 1
-    max: #{@global_max_hours}
+    max: #{scoped_max}
     step: 1
     html_options:
       data:
-        partition_max_hours: '#{@max_hours_by_partition.to_json}'
-    help: "Number of hours to run the job. Max varies by partition (Maximum: #{@global_max_hours} hours)."
+        partition_max_hours: '#{scoped_map.to_json}'
+    help: "Number of hours to run the job. Max varies by partition (Maximum: #{scoped_max} hours)."
   YAML
-  
+
   field_yaml
 end
 

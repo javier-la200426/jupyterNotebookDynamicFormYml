@@ -84,6 +84,7 @@ Remove any static includes for `partition`, `num_cores`, `num_memory`, `gpu_type
   - `generate_partition_field` — shows all user-accessible partitions (default, equivalent to `filter: :all`)
   - `generate_partition_field(filter: :gpu)` — shows only partitions that have GPU nodes (useful for GPU-only apps)
   - `generate_partition_field(filter: :cpu)` — shows only CPU-only partitions
+- `generate_num_cores_field`, `generate_num_memory_field`, and `generate_num_hours_field` accept the same `filter:` keyword. Pass the same filter you used on `generate_partition_field` so that the input's `max`, help text, and per-partition data map are scoped to the visible partitions (e.g., with `filter: :cpu`, the help text drops the "and GPU type" wording and the maximums reflect only CPU partitions).
 - The generated `gpu_type` field references `javascript: "form.js"`, so make sure `form.js` is present at the app root.
 
 ### 5) Update the form order
